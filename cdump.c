@@ -56,11 +56,8 @@ struct fixed_string {
 #define MAKE_FIXED_STRING(s) (struct fixed_string){s, sizeof(s) - 1}
 #define DIM(x) (sizeof(x) / sizeof(x[0]))
 
-enum parser_state next_state_from_known_line(const char *line, size_t line_length)
+static enum parser_state next_state_from_known_line(const char *line, size_t line_length)
 {
-    // printf("LINE: %d %.*s\n", (int)line_length, (int)line_length, line);
-    // printf("RLINE: %d %s\n", (int)sizeof("ITEM: TIMESTEP"), "ITEM: TIMESTEP");
-
     const struct fixed_string known[] = {
         [WAIT_FOR_ITEM] = MAKE_FIXED_STRING(""),
         [IN_TIMESTEP]   = MAKE_FIXED_STRING("ITEM: TIMESTEP"),
@@ -69,7 +66,8 @@ enum parser_state next_state_from_known_line(const char *line, size_t line_lengt
         [IN_ATOMS]      = MAKE_FIXED_STRING("ITEM: ATOMS id type x y z vx vy vz"),
     };
 
-    // prefix search to ignore junk at end.
+    // Prefix search only to ignore trailing whitespace at end. Ignore the
+    // "wait for item" state when doing this check.
     for (size_t i = 1; i < DIM(known); ++i) {
         if (line_length >= known[i].n) {
             if (memcmp(line, known[i].s, known[i].n) == 0) {
@@ -80,7 +78,7 @@ enum parser_state next_state_from_known_line(const char *line, size_t line_lengt
     return WAIT_FOR_ITEM;
 }
 
-bool parse_atom(struct atom *a, const char *line, size_t line_length)
+static bool parse_atom(struct atom *a, const char *line, size_t line_length)
 {
     assert(a != NULL);
     assert(line != NULL);
@@ -129,7 +127,7 @@ bool parse_atom(struct atom *a, const char *line, size_t line_length)
 
 static struct atom atoms[1048576] = {0};
 
-double cross_sectional_area(double radius, double zsphere, double zslice)
+static double cross_sectional_area(double radius, double zsphere, double zslice)
 {
     const double dh = fabs(zsphere - zslice);
     if (dh >= radius) {
@@ -168,7 +166,7 @@ double dvx2_over_slice(struct atom *atoms, size_t num_atoms, double grain_radius
     return dvx2;
 }
 
-double dv2_over_slice(struct atom *atoms, size_t num_atoms, double grain_radius, double zslice)
+static double dv2_over_slice(struct atom *atoms, size_t num_atoms, double grain_radius, double zslice)
 {
     double dvx2 = 0;
     double dvy2 = 0;
@@ -211,9 +209,9 @@ double dv2_over_slice(struct atom *atoms, size_t num_atoms, double grain_radius,
 }
 
 
-void process_frame(struct atom *atoms, size_t num_atoms, FILE *fout)
+static void process_frame(uint64_t timestep, struct atom *atoms, size_t num_atoms, FILE *fout)
 {
-
+    (void)timestep;
 /*
     const double grain_radius = 0.5;
     double dvx2_at_slices[100] = {0};
@@ -245,6 +243,11 @@ void process_frame(struct atom *atoms, size_t num_atoms, FILE *fout)
 
 int main(int argc, char *argv[])
 {
+    if (argc <= 1) {
+        printf("%s DUMP_FILE OUT_TEMPERATURE\n", argv[0]);
+        return 0;
+    }
+
     assert(argc >= 2);
     FILE *fin = fopen(argv[1], "r");
     assert(fin != NULL);
@@ -262,9 +265,6 @@ int main(int argc, char *argv[])
     while (!feof(fin)) {
         assert(remaining < sizeof(line));
         size_t num_read = fread(line + remaining, 1, sizeof(line) - 1 - remaining, fin);
-        // printf("%c", line[0]);
-        // sum += line[0];
-
         // printf("READ BYTES: %zu\n", num_read);
 
         remaining += num_read;
@@ -326,7 +326,7 @@ int main(int argc, char *argv[])
                     }
 
                     if (s.num_atoms == s.read_atoms) {
-                        process_frame(atoms, s.num_atoms, fout);
+                        process_frame(s.timestep, atoms, s.num_atoms, fout);
                         // printf("process frame %zu\n", num_frames);
                         num_frames++;
                         s = DEFAULT_DUMP_PARSER;
